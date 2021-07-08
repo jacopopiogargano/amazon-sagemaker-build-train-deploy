@@ -299,41 +299,40 @@ def plot_transactions_stats(transactions_df):
     
     plt.show()
     
-def save_data(customers_df, terminals_df, transactions_df):
-    base_dir_output = DIR_OUTPUT + time.strftime("%Y%m%d-%H%M%S") + "/"
+def save_data(customers_df, terminals_df, transactions_df, bucket_path):
+    base_dir_output = bucket_path + time.strftime("%Y%m%d-%H%M%S") + "/"
 
     # Saving customers
     print("Saving customers")
-    filename_output = "customers.pkl"
-    dir_output = base_dir_output + "customers/"
-    if not os.path.exists(dir_output):
-        os.makedirs(dir_output)
-    customers_df.to_pickle(dir_output+filename_output)
+    filename_output = "customers.csv"
+    save_df_to_s3(customers_df, base_dir_output + filename_output)
     print("Saved customers")
     
     # Saving terminals
     print("Saving terminals")
-    filename_output = "terminals.pkl"
-    dir_output = base_dir_output + "terminals/"
-    if not os.path.exists(dir_output):
-        os.makedirs(dir_output)
-    terminals_df.to_pickle(dir_output+filename_output)
+    filename_output = "terminals.csv"
+    save_df_to_s3(terminals_df, base_dir_output + filename_output)
     print("Saved terminals")
     
     # Saving transactions
     print("Saving transactions")
-    start_date = datetime.datetime.strptime(START_DATE, "%Y-%m-%d")
-    dir_output = base_dir_output + "transactions/"
-    if not os.path.exists(dir_output):
-        os.makedirs(dir_output)
+    filename_output = "transactions.csv"
+    save_df_to_s3(transactions_df, base_dir_output + filename_output)
+#     start_date = datetime.datetime.strptime(START_DATE, "%Y-%m-%d")
+#     dir_output = base_dir_output + "transactions/"
+#     if not os.path.exists(dir_output):
+#         os.makedirs(dir_output)
 
-    for day in range(transactions_df.TX_TIME_DAYS.max()+1):
+# #     for day in range(transactions_df.TX_TIME_DAYS.max()+1):
 
-        transactions_day = transactions_df[transactions_df.TX_TIME_DAYS==day].sort_values('TX_TIME_SECONDS')
+#         transactions_day = transactions_df[transactions_df.TX_TIME_DAYS==day].sort_values('TX_TIME_SECONDS')
 
-        date = start_date + datetime.timedelta(days=day)
-        filename_output = date.strftime("%Y-%m-%d")+'.pkl'
+#         date = start_date + datetime.timedelta(days=day)
+#         filename_output = date.strftime("%Y-%m-%d")+'.pkl'
 
-        transactions_day.to_pickle(dir_output+filename_output)
+#         transactions_day.to_pickle(dir_output+filename_output)
     print("Saved transactions")
     print("Done saving data")
+    
+def save_df_to_s3(df: pd.DataFrame, key: str):
+    df.to_csv(key)
