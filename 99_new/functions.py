@@ -304,19 +304,19 @@ def save_data(customers_df, terminals_df, transactions_df, bucket_path):
 
     # Saving customers
     print("Saving customers")
-    filename_output = "customers.csv"
+    filename_output = "customers/customers.csv"
     save_df_to_s3(customers_df, base_dir_output + filename_output)
     print("Saved customers")
     
     # Saving terminals
     print("Saving terminals")
-    filename_output = "terminals.csv"
+    filename_output = "terminals/terminals.csv"
     save_df_to_s3(terminals_df, base_dir_output + filename_output)
     print("Saved terminals")
     
     # Saving transactions
     print("Saving transactions")
-    filename_output = "transactions.csv"
+    filename_output = "transactions/transactions.csv"
     save_df_to_s3(transactions_df, base_dir_output + filename_output)
 #     start_date = datetime.datetime.strptime(START_DATE, "%Y-%m-%d")
 #     dir_output = base_dir_output + "transactions/"
@@ -335,4 +335,4 @@ def save_data(customers_df, terminals_df, transactions_df, bucket_path):
     print("Done saving data")
     
 def save_df_to_s3(df: pd.DataFrame, key: str):
-    df.to_csv(key)
+    df.to_csv(key, index=False)
