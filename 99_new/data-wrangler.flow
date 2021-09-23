@@ -1,0 +1,185 @@
+{
+  "metadata": {
+    "version": 1,
+    "disable_limits": false
+  },
+  "nodes": [
+    {
+      "node_id": "923fd426-c8be-4942-b5fa-738d07929eb4",
+      "type": "SOURCE",
+      "operator": "sagemaker.s3_source_0.1",
+      "parameters": {
+        "dataset_definition": {
+          "__typename": "S3CreateDatasetDefinitionOutput",
+          "datasetSourceType": "S3",
+          "name": "transactions.csv",
+          "description": null,
+          "s3ExecutionContext": {
+            "__typename": "S3ExecutionContext",
+            "s3Uri": "s3://sagemaker-us-east-1-996912938507/endtoendmlsm/data/precomputed/dataset/transactions/transactions.csv",
+            "s3ContentType": "csv",
+            "s3HasHeader": true,
+            "s3FieldDelimiter": ","
+          }
+        }
+      },
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "default",
+          "sampling": {
+            "sampling_method": "sample_by_limit",
+            "limit_rows": 50000
+          }
+        }
+      ]
+    },
+    {
+      "node_id": "6f7bfca2-57c0-47c3-9eb6-853613b70c82",
+      "type": "TRANSFORM",
+      "operator": "sagemaker.spark.infer_and_cast_type_0.1",
+      "parameters": {},
+      "trained_parameters": {
+        "schema": {
+          "TRANSACTION_ID": "long",
+          "TX_DATETIME": "string",
+          "CUSTOMER_ID": "long",
+          "TERMINAL_ID": "long",
+          "TX_AMOUNT": "float",
+          "TX_TIME_SECONDS": "long",
+          "TX_TIME_DAYS": "long",
+          "TX_FRAUD": "bool",
+          "TX_FRAUD_SCENARIO": "long"
+        }
+      },
+      "inputs": [
+        {
+          "name": "default",
+          "node_id": "923fd426-c8be-4942-b5fa-738d07929eb4",
+          "output_name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        }
+      ]
+    },
+    {
+      "node_id": "c75a6f44-6ac2-40fe-b277-fb0512809a34",
+      "type": "TRANSFORM",
+      "operator": "sagemaker.spark.featurize_date_time_0.1",
+      "parameters": {
+        "operator": "Extract columns",
+        "extract_columns_parameters": {
+          "output_mode": "Ordinal",
+          "output_format": "Columns",
+          "infer_datetime_format": true,
+          "date_time_format": "",
+          "year": true,
+          "month": true,
+          "day": true,
+          "hour": true,
+          "minute": false,
+          "second": false,
+          "week_of_year": false,
+          "day_of_year": false,
+          "quarter": false,
+          "input_column": "TX_DATETIME"
+        }
+      },
+      "inputs": [
+        {
+          "name": "df",
+          "node_id": "6f7bfca2-57c0-47c3-9eb6-853613b70c82",
+          "output_name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        }
+      ]
+    },
+    {
+      "node_id": "d9680eca-c198-44df-b80f-d37b3493a5d6",
+      "type": "TRANSFORM",
+      "operator": "sagemaker.spark.custom_pyspark_0.1",
+      "parameters": {
+        "code": "# Table is available as variable `df`\nfrom pyspark.sql.functions import dayofweek, to_timestamp\ndf = df.withColumn(\"TX_DURING_WEEKEND\", ((dayofweek(to_timestamp(df[\"TX_DATETIME\"]))+5)%7)+1 >5)"
+      },
+      "inputs": [
+        {
+          "name": "df",
+          "node_id": "c75a6f44-6ac2-40fe-b277-fb0512809a34",
+          "output_name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        }
+      ]
+    },
+    {
+      "node_id": "cdc4275b-7a07-46dc-8f34-92ebb7e680fa",
+      "type": "TRANSFORM",
+      "operator": "sagemaker.spark.custom_pyspark_0.1",
+      "parameters": {
+        "code": "# Table is available as variable `df`\ndf = df.withColumn(\"TX_DURING_NIGHT\", (df[\"TX_DATETIME_hour\"] >= 0) & (df[\"TX_DATETIME_hour\"] <= 6))"
+      },
+      "inputs": [
+        {
+          "name": "df",
+          "node_id": "d9680eca-c198-44df-b80f-d37b3493a5d6",
+          "output_name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        }
+      ]
+    },
+    {
+      "node_id": "b02feeab-29a2-4c1b-8a27-242d435d574d",
+      "type": "TRANSFORM",
+      "operator": "sagemaker.spark.custom_pandas_0.1",
+      "parameters": {
+        "code": "import pandas as pd\n\ndef get_customer_spending_behaviour_features(customer_transactions, windows_size_in_days=[1,7,30]):\n    \n    # Let us first order transactions chronologically\n    customer_transactions=customer_transactions.sort_values('TX_DATETIME')\n    \n    # The transaction date and time is set as the index, which will allow the use of the rolling function \n    customer_transactions.index=customer_transactions.TX_DATETIME\n    \n    # For each window size\n    for window_size in windows_size_in_days:\n        \n        # Compute the sum of the transaction amounts and the number of transactions for the given window size\n        SUM_AMOUNT_TX_WINDOW=customer_transactions['TX_AMOUNT'].rolling(str(window_size)+'d').sum()\n        NB_TX_WINDOW=customer_transactions['TX_AMOUNT'].rolling(str(window_size)+'d').count()\n    \n        # Compute the average transaction amount for the given window size\n        # NB_TX_WINDOW is always >0 since current transaction is always included\n        AVG_AMOUNT_TX_WINDOW=SUM_AMOUNT_TX_WINDOW/NB_TX_WINDOW\n    \n        # Save feature values\n        customer_transactions['CUSTOMER_ID_NB_TX_'+str(window_size)+'DAY_WINDOW']=list(NB_TX_WINDOW)\n        customer_transactions['CUSTOMER_ID_AVG_AMOUNT_'+str(window_size)+'DAY_WINDOW']=list(AVG_AMOUNT_TX_WINDOW)\n    \n    # Reindex according to transaction IDs\n    customer_transactions.index=customer_transactions.TRANSACTION_ID\n        \n    # And return the dataframe with the new features\n    return customer_transactions\n  \n  \ndf[\"TX_DATETIME\"] = pd.to_datetime(df[\"TX_DATETIME\"])\ndf=df.groupby('CUSTOMER_ID').apply(lambda x: get_customer_spending_behaviour_features(x, windows_size_in_days=[1,7,30]))\ndf=df.sort_values('TX_DATETIME').reset_index(drop=True)\ndf[\"TX_DATETIME\"] = df[\"TX_DATETIME\"].astype(str)"
+      },
+      "inputs": [
+        {
+          "name": "df",
+          "node_id": "cdc4275b-7a07-46dc-8f34-92ebb7e680fa",
+          "output_name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        }
+      ]
+    },
+    {
+      "node_id": "a808ae7a-4c99-4493-b1e5-0af4604f8420",
+      "type": "TRANSFORM",
+      "operator": "sagemaker.spark.custom_pandas_0.1",
+      "parameters": {
+        "code": "import pandas as pd\n\ndef get_count_risk_rolling_window(terminal_transactions, delay_period=7, windows_size_in_days=[1,7,30], feature=\"TERMINAL_ID\"):\n    \n    terminal_transactions=terminal_transactions.sort_values('TX_DATETIME')\n    \n    terminal_transactions.index=terminal_transactions.TX_DATETIME\n    \n    NB_FRAUD_DELAY=terminal_transactions['TX_FRAUD'].rolling(str(delay_period)+'d').sum()\n    NB_TX_DELAY=terminal_transactions['TX_FRAUD'].rolling(str(delay_period)+'d').count()\n    \n    for window_size in windows_size_in_days:\n    \n        NB_FRAUD_DELAY_WINDOW=terminal_transactions['TX_FRAUD'].rolling(str(delay_period+window_size)+'d').sum()\n        NB_TX_DELAY_WINDOW=terminal_transactions['TX_FRAUD'].rolling(str(delay_period+window_size)+'d').count()\n    \n        NB_FRAUD_WINDOW=NB_FRAUD_DELAY_WINDOW-NB_FRAUD_DELAY\n        NB_TX_WINDOW=NB_TX_DELAY_WINDOW-NB_TX_DELAY\n    \n        RISK_WINDOW=NB_FRAUD_WINDOW/NB_TX_WINDOW\n        \n        terminal_transactions[feature+'_NB_TX_'+str(window_size)+'DAY_WINDOW']=list(NB_TX_WINDOW)\n        terminal_transactions[feature+'_RISK_'+str(window_size)+'DAY_WINDOW']=list(RISK_WINDOW)\n        \n    terminal_transactions.index=terminal_transactions.TRANSACTION_ID\n    \n    # Replace NA values with 0 (all undefined risk scores where NB_TX_WINDOW is 0) \n    terminal_transactions.fillna(0,inplace=True)\n    \n    return terminal_transactions\n  \ndf[\"TX_DATETIME\"] = pd.to_datetime(df[\"TX_DATETIME\"])\ndf=df.groupby('TERMINAL_ID').apply(lambda x: get_count_risk_rolling_window(x, delay_period=7, windows_size_in_days=[1,7,30], feature=\"TERMINAL_ID\"))\ndf=df.sort_values('TX_DATETIME').reset_index(drop=True)\ndf[\"TX_DATETIME\"] = df[\"TX_DATETIME\"].astype(str)"
+      },
+      "inputs": [
+        {
+          "name": "df",
+          "node_id": "b02feeab-29a2-4c1b-8a27-242d435d574d",
+          "output_name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        }
+      ]
+    }
+  ]
+}
